@@ -146,6 +146,18 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\*PNP0F03","ClassGU
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ROOT#SWENUM","Service",0x00000000,"swenum"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ROOT#SWENUM","ClassGUID",0x00000000,"{4d36e97d-e325-11ce-bfc1-08002be10318}"
 
+; Microsoft Hyper-V Virtual Machine Bus
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#VMBUS","Service",0x00000000,"vmbus"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#VMBUS","ClassGUID",0x00000000,"{4d36e97d-e325-11ce-bfc1-08002be10318}"
+
+; Microsoft Hyper-V Virtual Keyboard
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\VMBUS#{f912ad6d-2b17-48ea-bd65-f927a61c7684}","Service",0x00000000,"hyperkbd"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\VMBUS#{f912ad6d-2b17-48ea-bd65-f927a61c7684}","ClassGUID",0x00000000,"{4d36e96b-e325-11ce-bfc1-08002be10318}"
+
+; Microsoft Hyper-V SCSI Controller
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\VMBUS#{ba6163d9-04a1-4d29-b605-72e2ffb1dc7f}","Service",0x00000000,"storvsc"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\VMBUS#{ba6163d9-04a1-4d29-b605-72e2ffb1dc7f}","ClassGUID",0x00000000,"{4d36e97b-e325-11ce-bfc1-08002be10318}"
+
 
 HKLM,"SYSTEM\CurrentControlSet\Control\SafeBoot","AlternateShell",2,"cmd.exe"
 
@@ -2187,6 +2199,30 @@ HKLM,"SYSTEM\CurrentControlSet\Services\Pci\Parameters","10DE002D",0x00030003,00
 HKLM,"SYSTEM\CurrentControlSet\Services\Pci\Parameters","10DE002E",0x00030003,00,00,00,a0,00,00,00,00
 HKLM,"SYSTEM\CurrentControlSet\Services\Pci\Parameters","10DE002F",0x00030003,00,00,00,a0,00,00,00,00
 HKLM,"SYSTEM\CurrentControlSet\Services\Pci\Parameters","101300D6101880D6",0x00030003,00,00,00,00,00,00,00,00
+
+; Microsoft Hyper-V Virtual Machine Bus
+HKLM,"SYSTEM\CurrentControlSet\Services\vmbus","DisplayName",0x00000000,"Microsoft Hyper-V Virtual Machine Bus"
+HKLM,"SYSTEM\CurrentControlSet\Services\vmbus","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\vmbus","Group",0x00000000,"System Bus Extender"
+HKLM,"SYSTEM\CurrentControlSet\Services\vmbus","ImagePath",0x00020000,"system32\drivers\vmbus.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\vmbus","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\vmbus","Type",0x00010001,0x00000001
+
+; Microsoft Hyper-V Virtual Keyboard
+HKLM,"SYSTEM\CurrentControlSet\Services\hyperkbd","DisplayName",0x00000000,"Microsoft Hyper-V Virtual Keyboard"
+HKLM,"SYSTEM\CurrentControlSet\Services\hyperkbd","ErrorControl",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\hyperkbd","Group",0x00000000,"Extended Base"
+HKLM,"SYSTEM\CurrentControlSet\Services\hyperkbd","ImagePath",0x00020000,"system32\drivers\hyperkbd.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\hyperkbd","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\hyperkbd","Type",0x00010001,0x00000001
+
+; Microsoft Hyper-V SCSI Controller
+HKLM,"SYSTEM\CurrentControlSet\Services\storvsc","DisplayName",0x00000000,"Microsoft Hyper-V SCSI Controller"
+HKLM,"SYSTEM\CurrentControlSet\Services\storvsc","ErrorControl",0x00010001,0x00000001
+HKLM,"SYSTEM\CurrentControlSet\Services\storvsc","Group",0x00000000,"Base"
+HKLM,"SYSTEM\CurrentControlSet\Services\storvsc","ImagePath",0x00020000,"system32\drivers\storvsc.sys"
+HKLM,"SYSTEM\CurrentControlSet\Services\storvsc","Start",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Services\storvsc","Type",0x00010001,0x00000001
 
 ; Plug and Play manager
 HKLM,"SYSTEM\CurrentControlSet\Services\PlugPlay","DisplayName",0x00000000,%PLUGPLAY_SERVICE%
