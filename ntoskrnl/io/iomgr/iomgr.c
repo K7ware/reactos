@@ -576,6 +576,12 @@ IoInitSystem(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* No one should need loader block any longer */
     IopLoaderBlock = NULL;
 
+    {
+        LARGE_INTEGER Delay;
+        Delay.QuadPart = -5LL * 10 * 1000 * 1000;
+        KeDelayExecutionThread(KernelMode, FALSE, &Delay);
+    }
+
     /* Create ARC names for boot devices */
     Status = IopCreateArcNames(LoaderBlock);
     if (!NT_SUCCESS(Status))
