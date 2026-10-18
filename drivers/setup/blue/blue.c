@@ -16,12 +16,32 @@
 #define NDEBUG
 #include <debug.h>
 
+#include <bootvid/bootvid.h>
+#include <bootvid/display.h>
+
 /* NOTES ******************************************************************/
 /*
  *  [[character][attribute]][[character][attribute]]....
  */
 
 /* TYPEDEFS ***************************************************************/
+
+#define BLUE_BV_WIDTH       640
+#define BLUE_BV_HEIGHT      400
+#define BLUE_BV_TOP         40
+#define BLUE_BV_COLUMNS     80
+#define BLUE_BV_ROWS        50
+#define BLUE_BV_CELLS       (BLUE_BV_COLUMNS * BLUE_BV_ROWS)
+#define BLUE_BV_STRIDE      (BLUE_BV_WIDTH / 2)
+#define BLUE_BV_BUFFER_SIZE (BLUE_BV_STRIDE * BLUE_BV_HEIGHT)
+
+static UCHAR BootVidBuffer[BLUE_BV_BUFFER_SIZE];
+
+static const UCHAR VgaToBootVid[16] =
+{
+    0, 4, 2, 6, 1, 5, 3, 8,
+    7, 12, 10, 14, 9, 13, 11, 15
+};
 
 typedef struct _DEVICE_EXTENSION
 {
@@ -39,6 +59,14 @@ typedef struct _DEVICE_EXTENSION
     USHORT  Columns;    /* Number of columns     */
     USHORT  CursorX, CursorY; /* Cursor position */
     PUCHAR  FontBitfield; /* Specifies the font  */
+    BOOLEAN BootVidInitAttempted;
+    BOOLEAN UseBootVid;
+    BOOLEAN VideoMemoryIsPool;
+    USHORT BootVidShadow[BLUE_BV_CELLS];
+    BOOLEAN BootVidShadowValid;
+    USHORT BootVidCursorX;
+    USHORT BootVidCursorY;
+    BOOLEAN BootVidCursorVisible;
 } DEVICE_EXTENSION, *PDEVICE_EXTENSION;
 
 typedef struct _VGA_REGISTERS
@@ -87,6 +115,177 @@ static const UCHAR DefaultPalette[] =
 };
 
 /* INBV MANAGEMENT FUNCTIONS **************************************************/
+
+static UCHAR
+ScrVgaToBootVidColor(UCHAR Color)
+{
+    /* VGA: BGRI；BootVid: RGBI */
+    return (Color & 0x0A) |
+           ((Color & 0x01) << 2) |
+           ((Color & 0x04) >> 2);
+}
+
+static VOID
+ScrBootVidRenderCell(
+    _In_ PDEVICE_EXTENSION DeviceExtension,
+    _In_ ULONG Row,
+    _In_ ULONG Column)
+{
+    ULONG Cell = Row * BLUE_BV_COLUMNS + Column;
+    USHORT Value = ((PUSHORT)DeviceExtension->VideoMemory)[Cell];
+    UCHAR Character = (UCHAR)Value;
+    UCHAR Attribute = (UCHAR)(Value >> 8);
+    UCHAR Foreground = VgaToBootVid[Attribute & 0x0F];
+    UCHAR Background = VgaToBootVid[(Attribute >> 4) & 0x0F];
+    ULONG Scan, Pair;
+
+    for (Scan = 0; Scan < 8; ++Scan)
+    {
+        PUCHAR Destination;
+        UCHAR Glyph = DeviceExtension->FontBitfield
+            ? DeviceExtension->FontBitfield[Character * 8 + Scan]
+            : 0;
+
+        if (DeviceExtension->CursorVisible &&
+            Column == DeviceExtension->CursorX &&
+            Row == DeviceExtension->CursorY &&
+            Scan == 7)
+        {
+            Glyph = 0xFF;
+        }
+
+        Destination = BootVidBuffer +
+                      (Row * 8 + Scan) * BLUE_BV_STRIDE +
+                      Column * 4;
+
+        for (Pair = 0; Pair < 4; ++Pair)
+        {
+            ULONG Shift = Pair * 2;
+            UCHAR Left = (Glyph & (0x80 >> Shift))
+                ? Foreground : Background;
+            UCHAR Right = (Glyph & (0x40 >> Shift))
+                ? Foreground : Background;
+
+            Destination[Pair] = (UCHAR)((Left << 4) | Right);
+        }
+    }
+}
+
+static VOID
+ScrBootVidFlush(
+    _In_ PDEVICE_EXTENSION DeviceExtension)
+{
+    USHORT DirtyLeft[BLUE_BV_ROWS];
+    USHORT DirtyRight[BLUE_BV_ROWS];
+    BOOLEAN FullRefresh;
+    ULONG DirtyCells = 0;
+    ULONG Row, Column;
+
+    if (!DeviceExtension->UseBootVid ||
+        !DeviceExtension->Enabled ||
+        !DeviceExtension->VideoMemory ||
+        DeviceExtension->Columns != BLUE_BV_COLUMNS ||
+        DeviceExtension->Rows != BLUE_BV_ROWS)
+    {
+        return;
+    }
+
+    FullRefresh = !DeviceExtension->BootVidShadowValid;
+
+    for (Row = 0; Row < BLUE_BV_ROWS; ++Row)
+    {
+        DirtyLeft[Row] = BLUE_BV_COLUMNS;
+        DirtyRight[Row] = 0;
+
+        for (Column = 0; Column < BLUE_BV_COLUMNS; ++Column)
+        {
+            ULONG Cell = Row * BLUE_BV_COLUMNS + Column;
+            USHORT Value =
+                ((PUSHORT)DeviceExtension->VideoMemory)[Cell];
+            BOOLEAN OldCursor =
+                DeviceExtension->BootVidShadowValid &&
+                DeviceExtension->BootVidCursorVisible &&
+                DeviceExtension->BootVidCursorX == Column &&
+                DeviceExtension->BootVidCursorY == Row;
+            BOOLEAN NewCursor =
+                !!DeviceExtension->CursorVisible &&
+                DeviceExtension->CursorX == Column &&
+                DeviceExtension->CursorY == Row;
+
+            if (FullRefresh ||
+                DeviceExtension->BootVidShadow[Cell] != Value ||
+                OldCursor != NewCursor)
+            {
+                DeviceExtension->BootVidShadow[Cell] = Value;
+                ScrBootVidRenderCell(DeviceExtension, Row, Column);
+
+                DirtyLeft[Row] = min(DirtyLeft[Row], (USHORT)Column);
+                DirtyRight[Row] = max(DirtyRight[Row], (USHORT)Column);
+                ++DirtyCells;
+            }
+        }
+    }
+
+    DeviceExtension->BootVidCursorX = DeviceExtension->CursorX;
+    DeviceExtension->BootVidCursorY = DeviceExtension->CursorY;
+    DeviceExtension->BootVidCursorVisible =
+        !!DeviceExtension->CursorVisible;
+    DeviceExtension->BootVidShadowValid = TRUE;
+
+    if (!DirtyCells)
+        return;
+
+    if (FullRefresh || DirtyCells >= BLUE_BV_CELLS / 4)
+    {
+        VidBufferToScreenBlt(BootVidBuffer,
+                             0,
+                             BLUE_BV_TOP,
+                             BLUE_BV_WIDTH,
+                             BLUE_BV_HEIGHT,
+                             BLUE_BV_STRIDE);
+        return;
+    }
+
+    for (Row = 0; Row < BLUE_BV_ROWS; ++Row)
+    {
+        if (DirtyLeft[Row] != BLUE_BV_COLUMNS)
+        {
+            ULONG Left = DirtyLeft[Row];
+            ULONG Width = DirtyRight[Row] - Left + 1;
+
+            VidBufferToScreenBlt(
+                BootVidBuffer + Row * 8 * BLUE_BV_STRIDE + Left * 4,
+                Left * 8,
+                BLUE_BV_TOP + Row * 8,
+                Width * 8,
+                8,
+                BLUE_BV_STRIDE);
+        }
+    }
+}
+
+static VOID
+ScrReleaseVideoMemory(
+    _Inout_ PDEVICE_EXTENSION DeviceExtension)
+{
+    if (DeviceExtension->VideoMemory)
+    {
+        if (DeviceExtension->VideoMemoryIsPool)
+        {
+            ExFreePoolWithTag(DeviceExtension->VideoMemory, TAG_BLUE);
+        }
+        else
+        {
+            MmUnmapIoSpace(DeviceExtension->VideoMemory,
+                           DeviceExtension->VideoMemorySize);
+        }
+    }
+
+    DeviceExtension->VideoMemory = NULL;
+    DeviceExtension->VideoMemorySize = 0;
+    DeviceExtension->VideoMemoryIsPool = FALSE;
+    DeviceExtension->BootVidShadowValid = FALSE;
+}
 
 static BOOLEAN
 ScrResetScreen(
@@ -364,7 +563,7 @@ ScrSetCursor(
 {
     ULONG Offset;
 
-    if (!DeviceExtension->VideoMemory)
+    if (!DeviceExtension->VideoMemory || DeviceExtension->UseBootVid)
         return;
 
     Offset = (DeviceExtension->CursorY * DeviceExtension->Columns) + DeviceExtension->CursorX;
@@ -385,7 +584,7 @@ ScrSetCursorShape(
     ULONG size, height;
     UCHAR data, value;
 
-    if (!DeviceExtension->VideoMemory)
+    if (!DeviceExtension->VideoMemory || DeviceExtension->UseBootVid)
         return;
 
     height = DeviceExtension->ScanLines;
@@ -507,6 +706,12 @@ ScrResetScreen(
     if (!FullReset && (Enable == DeviceExtension->Enabled))
         return FALSE; // STATUS_INVALID_PARAMETER; STATUS_INVALID_DEVICE_REQUEST;
 
+    if (FullReset && !DeviceExtension->BootVidInitAttempted)
+    {
+        DeviceExtension->BootVidInitAttempted = TRUE;
+        DeviceExtension->UseBootVid = VidInitialize(TRUE);
+    }
+
     if (FullReset)
     {
         DeviceExtension->CursorSize    = 5; /* FIXME: value correct?? */
@@ -526,45 +731,62 @@ ScrResetScreen(
 
     if (Enable)
     {
-        ScrAcquireOwnership(DeviceExtension);
+
+        if (DeviceExtension->UseBootVid)
+        {
+            DeviceExtension->Columns = 80;
+            DeviceExtension->Rows = 50;
+            DeviceExtension->ScanLines = 8;
+        }
+        else
+        {
+            ScrAcquireOwnership(DeviceExtension);
+        }
 
         if (FullReset)
         {
-            /*
-             * Fully reset the screen and all its settings.
-             */
+            ScrReleaseVideoMemory(DeviceExtension);
 
-            /* Unmap any previously mapped video memory */
-            if (DeviceExtension->VideoMemory)
+            // ...existing ScreenBuffer release...
+
+            DeviceExtension->VideoMemorySize =
+                DeviceExtension->Rows * DeviceExtension->Columns * 2;
+
+            if (DeviceExtension->UseBootVid)
             {
-                ASSERT(DeviceExtension->VideoMemorySize != 0);
-                MmUnmapIoSpace(DeviceExtension->VideoMemory, DeviceExtension->VideoMemorySize);
-            }
-            DeviceExtension->VideoMemory = NULL;
-            DeviceExtension->VideoMemorySize = 0;
+                ULONG Cell;
 
-            /* Free any previously allocated backup screenbuffer */
-            if (DeviceExtension->ScreenBuffer)
+                DeviceExtension->VideoMemory =
+                    ExAllocatePoolWithTag(NonPagedPool,
+                                        DeviceExtension->VideoMemorySize,
+                                        TAG_BLUE);
+
+                if (DeviceExtension->VideoMemory)
+                {
+                    DeviceExtension->VideoMemoryIsPool = TRUE;
+
+                    for (Cell = 0;
+                        Cell < DeviceExtension->Rows * DeviceExtension->Columns;
+                        Cell++)
+                    {
+                        ((PUSHORT)DeviceExtension->VideoMemory)[Cell] =
+                            (USHORT)((DeviceExtension->CharAttribute << 8) | ' ');
+                    }
+                }
+            }
+            else
             {
-                ASSERT(DeviceExtension->ScreenBufferSize != 0);
-                ExFreePoolWithTag(DeviceExtension->ScreenBuffer, TAG_BLUE);
+                BaseAddress.QuadPart = VIDMEM_BASE;
+                DeviceExtension->VideoMemory =
+                    MmMapIoSpace(BaseAddress,
+                                DeviceExtension->VideoMemorySize,
+                                MmNonCached);
             }
-            DeviceExtension->ScreenBuffer = NULL;
-            DeviceExtension->ScreenBufferSize = 0;
 
-            /* Get a pointer to the video memory */
-            DeviceExtension->VideoMemorySize = DeviceExtension->Rows * DeviceExtension->Columns * 2;
-            if (DeviceExtension->VideoMemorySize == 0)
-                return FALSE; // STATUS_INVALID_VIEW_SIZE; STATUS_MAPPED_FILE_SIZE_ZERO;
-
-            /* Map the video memory */
-            BaseAddress.QuadPart = VIDMEM_BASE;
-            DeviceExtension->VideoMemory =
-                (PUCHAR)MmMapIoSpace(BaseAddress, DeviceExtension->VideoMemorySize, MmNonCached);
             if (!DeviceExtension->VideoMemory)
             {
                 DeviceExtension->VideoMemorySize = 0;
-                return FALSE; // STATUS_NONE_MAPPED; STATUS_NOT_MAPPED_VIEW; STATUS_CONFLICTING_ADDRESSES;
+                return FALSE;
             }
 
             /* Initialize the backup screenbuffer in non-paged pool (must be accessible at high IRQL) */
@@ -578,7 +800,8 @@ ScrResetScreen(
             }
 
             /* (Re-)initialize INBV */
-            ScrInbvInitialize();
+            if (!DeviceExtension->UseBootVid)
+                ScrInbvInitialize();
         }
         else
         {
@@ -603,7 +826,12 @@ ScrResetScreen(
             ScrSetCursor(DeviceExtension);
             ScrSetCursorShape(DeviceExtension);
         }
+
+        if (DeviceExtension->UseBootVid)
+            DeviceExtension->BootVidShadowValid = FALSE;
+
         DeviceExtension->Enabled = TRUE;
+        ScrBootVidFlush(DeviceExtension);
     }
     else
     {
@@ -621,7 +849,7 @@ ScrResetScreen(
             if (DeviceExtension->VideoMemory)
             {
                 ASSERT(DeviceExtension->VideoMemorySize != 0);
-                MmUnmapIoSpace(DeviceExtension->VideoMemory, DeviceExtension->VideoMemorySize);
+                ScrReleaseVideoMemory(DeviceExtension);
             }
             DeviceExtension->VideoMemory = NULL;
             DeviceExtension->VideoMemorySize = 0;
@@ -833,6 +1061,7 @@ ScrWrite(
     DeviceExtension->CursorX = cursorx;
     DeviceExtension->CursorY = cursory;
     ScrSetCursor(DeviceExtension);
+    ScrBootVidFlush(DeviceExtension);
 
     Status = STATUS_SUCCESS;
 
@@ -1521,8 +1750,10 @@ ScrIoControl(
             }
             RtlCopyMemory(DeviceExtension->FontBitfield, Irp->AssociatedIrp.SystemBuffer, 256 * 8);
 
+            DeviceExtension->BootVidShadowValid = FALSE;
+
             /* Set the font if needed */
-            if (DeviceExtension->Enabled && DeviceExtension->VideoMemory)
+            if (DeviceExtension->Enabled && DeviceExtension->VideoMemory && !DeviceExtension->UseBootVid)
                 ScrSetFont(DeviceExtension->FontBitfield);
 
             Irp->IoStatus.Information = 0;
@@ -1532,6 +1763,23 @@ ScrIoControl(
 
         default:
             Status = STATUS_NOT_IMPLEMENTED;
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        switch (stk->Parameters.DeviceIoControl.IoControlCode)
+        {
+            case IOCTL_CONSOLE_SET_SCREEN_BUFFER_INFO:
+            case IOCTL_CONSOLE_SET_CURSOR_INFO:
+            case IOCTL_CONSOLE_FILL_OUTPUT_ATTRIBUTE:
+            case IOCTL_CONSOLE_WRITE_OUTPUT_ATTRIBUTE:
+            case IOCTL_CONSOLE_FILL_OUTPUT_CHARACTER:
+            case IOCTL_CONSOLE_WRITE_OUTPUT_CHARACTER:
+            case IOCTL_CONSOLE_DRAW:
+            case IOCTL_CONSOLE_LOADFONT:
+                ScrBootVidFlush(DeviceExtension);
+                break;
+        }
     }
 
     Irp->IoStatus.Status = Status;
