@@ -1525,7 +1525,7 @@ DriverEntry(
     ULONG OsMajorVersion = 0, OsMinorVersion = 0, OsBuildNumber = 0;
     NTSTATUS Status;
 
-    __debugbreak();
+    //__debugbreak();
 
     /* Get operating system version.
      * NOTE: The PsGetVersion function was not available in NT 3.x. */
