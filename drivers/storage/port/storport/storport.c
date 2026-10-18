@@ -734,7 +734,7 @@ StorPortExtendedFunction(
     PVOID* AllocatedPoolPointer;
     PVOID PoolPointer;
 
-    DPRINT1("StorPortExtendedFunction(%d %p ...)\n",
+    DPRINT("StorPortExtendedFunction(%d %p ...)\n",
             FunctionCode, HwDeviceExtension);
 
     va_start(va, HwDeviceExtension);
@@ -978,7 +978,7 @@ StorPortExtendedFunction(
 
             RequestReference = StorpRequestReference(Srb);
 
-            DPRINT1("GetOriginalMdl: Srb=%p OriginalRequest=%p ReqRef=%p "
+            DPRINT("GetOriginalMdl: Srb=%p OriginalRequest=%p ReqRef=%p "
                     "Irp=%p Mdl=%p Buffer=%p Length=%lu\n",
                     Srb,
                     Srb->OriginalRequest,
@@ -998,7 +998,7 @@ StorPortExtendedFunction(
             *Mdl = RequestReference->Irp->MdlAddress;
             Status = STOR_STATUS_SUCCESS;
 
-            DPRINT1("GetOriginalMdl return: Status=%08lx Slot=%p Mdl=%p "
+            DPRINT("GetOriginalMdl return: Status=%08lx Slot=%p Mdl=%p "
                     "StartVa=%p Va=%p Offset=%lu Count=%lu Flags=%04x Buffer=%p\n",
                     Status,
                     Mdl,
