@@ -339,25 +339,28 @@ Amd64SetupIdt(PVOID IdtBase)
 }
 
 #define WINLDR_MSR_EFER       0xC0000080UL
+#define WINLDR_EFER_SCE       (1ULL << 0)
 #define WINLDR_EFER_NXE       (1ULL << 11)
 #define WINLDR_CPUID_NX       (1UL << 20)
 
 static VOID
-Amd64EnableNx(VOID)
+Amd64ConfigureEfer(VOID)
 {
     ULONG CpuInfo[4];
     ULONG64 Efer;
 
-    __cpuid((int*)CpuInfo, 0x80000000);
-    if (CpuInfo[0] < 0x80000001)
-        return;
-
-    __cpuid((int*)CpuInfo, 0x80000001);
-    if (!(CpuInfo[3] & WINLDR_CPUID_NX))
-        return;
-
     Efer = __readmsr(WINLDR_MSR_EFER);
-    __writemsr(WINLDR_MSR_EFER, Efer | WINLDR_EFER_NXE);
+    Efer |= WINLDR_EFER_SCE;
+
+    __cpuid((int*)CpuInfo, 0x80000000);
+    if (CpuInfo[0] >= 0x80000001)
+    {
+        __cpuid((int*)CpuInfo, 0x80000001);
+        if (CpuInfo[3] & WINLDR_CPUID_NX)
+            Efer |= WINLDR_EFER_NXE;
+    }
+
+    __writemsr(WINLDR_MSR_EFER, Efer);
 }
 
 VOID
@@ -372,8 +375,8 @@ WinLdrSetProcessorContext(
     /* Re-initialize EFLAGS */
     __writeeflags(0);
 
-    /* Enable NX bit if supported */
-    Amd64EnableNx();
+    /* Enable SYSCALL/SYSRET and NX if supported */
+    Amd64ConfigureEfer();
 
     /* Set the new PML4 */
     __writecr3((ULONG64)PxeBase);
