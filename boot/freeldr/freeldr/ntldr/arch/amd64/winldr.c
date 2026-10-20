@@ -396,6 +396,7 @@ WinLdrSetProcessorContext(
     TRACE("leave WinLdrSetProcessorContext\n");
 }
 
+#define WINLDR_INITIAL_DPC_STACK_SIZE (6 * MM_PAGE_SIZE)
 #define WINLDR_INITIAL_KERNEL_STACK_SIZE (6 * MM_PAGE_SIZE)
 PVOID WinLdrInitialKernelStackTop;
 
@@ -403,6 +404,7 @@ void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     PVOID SharedUserDataAddress = NULL;
     PKTSS Tss = NULL;
+    PVOID InitialDpcStack = NULL;
     PVOID InitialKernelStack = NULL;
     ULONG BlockSize, NumPages;
 
@@ -418,6 +420,16 @@ void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
         return;
     }
     RtlZeroMemory(SharedUserDataAddress, MM_PAGE_SIZE);
+
+    InitialDpcStack = MmAllocateMemoryWithType(
+        WINLDR_INITIAL_DPC_STACK_SIZE,
+        LoaderStartupDpcStack);
+    if (InitialDpcStack == NULL)
+    {
+        UiMessageBox("Can't allocate initial DPC stack.");
+        return;
+    }
+    RtlZeroMemory(InitialDpcStack, WINLDR_INITIAL_DPC_STACK_SIZE);
 
     /* Allocate TSS */
     BlockSize = (sizeof(KTSS) + MM_PAGE_SIZE) & ~(MM_PAGE_SIZE - 1);
@@ -444,6 +456,12 @@ void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
         return;
     }
     RtlZeroMemory(InitialKernelStack, WINLDR_INITIAL_KERNEL_STACK_SIZE);
+    /*
+    * On NT 5.2 AMD64, LoaderBlock->KernelStack supplies the boot
+    * processor's initial DPC stack, despite the field's name.
+    */
+    LoaderBlock->KernelStack = (ULONG_PTR)PaToVa(
+        (PUCHAR)InitialDpcStack + WINLDR_INITIAL_DPC_STACK_SIZE);
     WinLdrInitialKernelStackTop = PaToVa(
         (PUCHAR)InitialKernelStack + WINLDR_INITIAL_KERNEL_STACK_SIZE);
     Tss->Rsp0 = (ULONG64)(ULONG_PTR)WinLdrInitialKernelStackTop - 0x20;
