@@ -401,6 +401,7 @@ WinLdrSetProcessorContext(
 
 #define WINLDR_INITIAL_DPC_STACK_SIZE (6 * MM_PAGE_SIZE)
 #define WINLDR_INITIAL_KERNEL_STACK_SIZE (6 * MM_PAGE_SIZE)
+#define WINLDR_INITIAL_PANIC_STACK_SIZE  (6 * MM_PAGE_SIZE)
 PVOID WinLdrInitialKernelStackTop;
 
 void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
@@ -409,6 +410,7 @@ void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
     PKTSS Tss = NULL;
     PVOID InitialDpcStack = NULL;
     PVOID InitialKernelStack = NULL;
+    PVOID InitialPanicStack = NULL;
     ULONG BlockSize, NumPages;
 
     LoaderBlock->u.I386.CommonDataArea = (PVOID)DbgPrint; // HACK
@@ -468,6 +470,23 @@ void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
     WinLdrInitialKernelStackTop = PaToVa(
         (PUCHAR)InitialKernelStack + WINLDR_INITIAL_KERNEL_STACK_SIZE);
     Tss->Rsp0 = (ULONG64)(ULONG_PTR)WinLdrInitialKernelStackTop - 0x20;
+
+    InitialPanicStack = MmAllocateMemoryWithType(
+        WINLDR_INITIAL_PANIC_STACK_SIZE,
+        LoaderStartupPanicStack);
+    if (InitialPanicStack == NULL)
+    {
+        UiMessageBox("Can't allocate initial panic stack.");
+        return;
+    }
+    RtlZeroMemory(InitialPanicStack, WINLDR_INITIAL_PANIC_STACK_SIZE);
+
+    /*
+     * Ist[1] corresponds to hardware IST1, normally used by the
+     * AMD64 double-fault gate.
+     */
+    Tss->Ist[1] = (ULONG64)(ULONG_PTR)PaToVa(
+        (PUCHAR)InitialPanicStack + WINLDR_INITIAL_PANIC_STACK_SIZE) - 0x20;
 
     /* Allocate space for new GDT + IDT */
     BlockSize = NUM_GDT * sizeof(KGDTENTRY) + NUM_IDT * sizeof(KIDTENTRY);
