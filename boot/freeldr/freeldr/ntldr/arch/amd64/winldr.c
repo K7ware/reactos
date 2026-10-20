@@ -400,6 +400,7 @@ WinLdrSetProcessorContext(
 }
 
 #define WINLDR_INITIAL_DPC_STACK_SIZE (6 * MM_PAGE_SIZE)
+#define WINLDR_DPC_STACK_HEADROOM_SIZE MM_PAGE_SIZE
 #define WINLDR_INITIAL_KERNEL_STACK_SIZE (6 * MM_PAGE_SIZE)
 #define WINLDR_INITIAL_PANIC_STACK_SIZE  (6 * MM_PAGE_SIZE)
 PVOID WinLdrInitialKernelStackTop;
@@ -411,6 +412,7 @@ void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
     PVOID InitialDpcStack = NULL;
     PVOID InitialKernelStack = NULL;
     PVOID InitialPanicStack = NULL;
+    PVOID TssAllocation = NULL;
     ULONG BlockSize, NumPages;
 
     LoaderBlock->u.I386.CommonDataArea = (PVOID)DbgPrint; // HACK
@@ -437,14 +439,26 @@ void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
     RtlZeroMemory(InitialDpcStack, WINLDR_INITIAL_DPC_STACK_SIZE);
 
     /* Allocate TSS */
-    BlockSize = (sizeof(KTSS) + MM_PAGE_SIZE) & ~(MM_PAGE_SIZE - 1);
-    Tss = MmAllocateMemoryWithType(BlockSize, LoaderMemoryData);
-    if (Tss == NULL)
+    BlockSize = WINLDR_DPC_STACK_HEADROOM_SIZE +
+        (sizeof(KTSS) + MM_PAGE_SIZE) & ~(MM_PAGE_SIZE - 1);
+    TssAllocation = MmAllocateMemoryWithType(BlockSize, LoaderMemoryData);
+    if (TssAllocation == NULL)
     {
         UiMessageBox("Can't allocate TSS.");
         return;
     }
-    RtlZeroMemory(Tss, BlockSize);
+
+    if ((PUCHAR)TssAllocation !=
+        (PUCHAR)InitialDpcStack + WINLDR_INITIAL_DPC_STACK_SIZE)
+    {
+        UiMessageBox("DPC stack headroom is not contiguous.");
+        return;
+    }
+
+    RtlZeroMemory(TssAllocation, BlockSize);
+
+    Tss = (PKTSS)((PUCHAR)TssAllocation +
+                WINLDR_DPC_STACK_HEADROOM_SIZE);
     TssBasePage = (ULONG_PTR)Tss >> MM_PAGE_SHIFT;
 
     /*
