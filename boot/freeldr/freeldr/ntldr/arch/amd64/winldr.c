@@ -371,10 +371,14 @@ WinLdrSetProcessorContext(
     TRACE("leave WinLdrSetProcessorContext\n");
 }
 
+#define WINLDR_INITIAL_KERNEL_STACK_SIZE (6 * MM_PAGE_SIZE)
+PVOID WinLdrInitialKernelStackTop;
+
 void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     PVOID SharedUserDataAddress = NULL;
-    ULONG_PTR Tss = 0;
+    PKTSS Tss = NULL;
+    PVOID InitialKernelStack = NULL;
     ULONG BlockSize, NumPages;
 
     LoaderBlock->u.I386.CommonDataArea = (PVOID)DbgPrint; // HACK
@@ -392,8 +396,32 @@ void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Allocate TSS */
     BlockSize = (sizeof(KTSS) + MM_PAGE_SIZE) & ~(MM_PAGE_SIZE - 1);
-    Tss = (ULONG_PTR)MmAllocateMemoryWithType(BlockSize, LoaderMemoryData);
-    TssBasePage = Tss >> MM_PAGE_SHIFT;
+    Tss = MmAllocateMemoryWithType(BlockSize, LoaderMemoryData);
+    if (Tss == NULL)
+    {
+        UiMessageBox("Can't allocate TSS.");
+        return;
+    }
+    RtlZeroMemory(Tss, BlockSize);
+    TssBasePage = (ULONG_PTR)Tss >> MM_PAGE_SHIFT;
+
+    /*
+     * KiSystemStartup passes TSS.Rsp0 to KeInitThread as an existing
+     * six-page initial kernel stack. Supplying NULL would invoke
+     * MmCreateKernelStack before MM initialization is complete.
+     */
+    InitialKernelStack = MmAllocateMemoryWithType(
+        WINLDR_INITIAL_KERNEL_STACK_SIZE,
+        LoaderStartupKernelStack);
+    if (InitialKernelStack == NULL)
+    {
+        UiMessageBox("Can't allocate initial kernel stack.");
+        return;
+    }
+    RtlZeroMemory(InitialKernelStack, WINLDR_INITIAL_KERNEL_STACK_SIZE);
+    WinLdrInitialKernelStackTop = PaToVa(
+        (PUCHAR)InitialKernelStack + WINLDR_INITIAL_KERNEL_STACK_SIZE);
+    Tss->Rsp0 = (ULONG64)(ULONG_PTR)WinLdrInitialKernelStackTop - 0x20;
 
     /* Allocate space for new GDT + IDT */
     BlockSize = NUM_GDT * sizeof(KGDTENTRY) + NUM_IDT * sizeof(KIDTENTRY);

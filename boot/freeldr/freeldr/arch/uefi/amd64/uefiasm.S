@@ -93,6 +93,21 @@ reload_cs:
     /* All done */
     ret
 
+/*
+ * RCX = kernel entry
+ * RDX = loader block
+ * R8  = high virtual stack top
+ */
+PUBLIC WinLdrSwitchStackAndStart
+WinLdrSwitchStackAndStart:
+    mov rax, rcx
+    mov rcx, rdx
+
+    mov rsp, r8
+    sub rsp, 8
+    mov qword ptr [rsp], 0
+    jmp rax
+
 // void _changestack(VOID)
 PUBLIC _changestack
 _changestack:

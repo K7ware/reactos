@@ -1372,6 +1372,18 @@ LoadAndBootWindows(
                                     BootPath);
 }
 
+#if defined(_M_AMD64) && defined(UEFIBOOT)
+extern PVOID WinLdrInitialKernelStackTop;
+
+DECLSPEC_NORETURN
+VOID
+NTAPI
+WinLdrSwitchStackAndStart(
+    _In_ ULONG_PTR KernelEntry,
+    _In_ PLOADER_PARAMETER_BLOCK LoaderBlock,
+    _In_ PVOID StackTop);
+#endif
+
 ARC_STATUS
 LoadAndBootWindowsCommon(
     _In_ USHORT OperatingSystemVersion,
@@ -1505,7 +1517,13 @@ LoadAndBootWindowsCommon(
 #endif
 
     /* Pass control */
+#if defined(_M_AMD64) && defined(UEFIBOOT)
+    WinLdrSwitchStackAndStart((ULONG_PTR)KiSystemStartup,
+                              LoaderBlockVA,
+                              WinLdrInitialKernelStackTop);
+#else
     (*KiSystemStartup)(LoaderBlockVA);
+#endif
 
     UNREACHABLE; // return ESUCCESS;
 }
