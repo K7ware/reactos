@@ -67,7 +67,7 @@ VidBufferToScreenBlt(
     _In_ ULONG Top,
     _In_ ULONG Width,
     _In_ ULONG Height,
-    _In_ ULONG Stride);
+    _In_ LONG Stride);
 
 VOID
 NTAPI

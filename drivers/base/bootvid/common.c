@@ -46,7 +46,7 @@ BitBlt(
     _In_ ULONG Height,
     _In_reads_bytes_(Height * Stride) PUCHAR Buffer,
     _In_ ULONG BitsPerPixel,
-    _In_ ULONG Stride)
+    _In_ LONG Stride)
 {
     ULONG X, Y, Pixel;
     UCHAR Colors;
@@ -61,7 +61,7 @@ BitBlt(
         DbgPrint("Unhandled BitBlt\n"
                  "%lux%lu @ (%lu|%lu)\n"
                  "Bits Per Pixel %lu\n"
-                 "Buffer: %p. Stride: %lu\n",
+                 "Buffer: %p. Stride: %ld\n",
                  Width,
                  Height,
                  Left,
@@ -303,7 +303,7 @@ VidBufferToScreenBlt(
     _In_ ULONG Top,
     _In_ ULONG Width,
     _In_ ULONG Height,
-    _In_ ULONG Stride)
+    _In_ LONG Stride)
 {
     /* Make sure we have a width and height */
     if (!Width || !Height)
